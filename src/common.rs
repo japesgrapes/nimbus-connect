@@ -2358,6 +2358,19 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
+    // Nimbus defaults are compiled in; no signed Pro custom-client file is needed.
+    *config::APP_NAME.write().unwrap() = "Nimbus Connect".to_owned();
+    {
+        let mut defaults = config::DEFAULT_SETTINGS.write().unwrap();
+        for (key, value) in [
+            ("custom-rendezvous-server", "rustdesk.nimbusconnect.co.za"),
+            ("key", "OiHgteVB1Hk+sBd5WRgNwseYFthBc7LMZu+ESvzaTOk="),
+            ("relay-server", ""),
+            ("api-server", ""),
+        ] {
+            defaults.insert(key.to_owned(), value.to_owned());
+        }
+    }
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
@@ -2948,6 +2961,17 @@ pub fn is_valid_untrusted_peer_id(id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nimbus_defaults_match_the_owner_configuration() {
+        load_custom_client();
+        assert_eq!(get_app_name(), "Nimbus Connect");
+        assert_eq!(Config::get_option("custom-rendezvous-server"), "rustdesk.nimbusconnect.co.za");
+        assert_eq!(Config::get_option("key"), "OiHgteVB1Hk+sBd5WRgNwseYFthBc7LMZu+ESvzaTOk=");
+        assert_eq!(Config::get_option("relay-server"), "");
+        assert_eq!(Config::get_option("api-server"), "");
+        assert!(is_custom_client());
+    }
     use hbb_common::tokio::{
         self,
         time::{interval, interval_at, sleep, Duration, Instant, Interval},
