@@ -148,7 +148,7 @@ jobs:
         persist-credentials: false
     - name: Validate Nimbus branding contracts
       shell: bash
-      run: python3 -m unittest branding/test_branding.py -v
+      run: python3 -m unittest branding/test_branding.py branding/test_msi_preprocess.py -v
     - name: Restore bridge files
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
@@ -268,6 +268,13 @@ jobs:
         $reported = (Get-Content version.txt -Raw).Trim()
         if ($reported -cne $env:VERSION) { throw "Unexpected version: $reported" }
         Write-Output "Verified product: $($info.ProductName), version: $reported"
+    - name: Test MSI metadata probe on real Windows client
+      shell: pwsh
+      env:
+        NIMBUS_CLIENT_PROBE: '1'
+      run: |-
+        python -m unittest branding.test_msi_preprocess.BuiltWindowsClientProbe -v
+        if ($LASTEXITCODE -ne 0) { throw "Windows metadata probe failed" }
     - name: Test effective Nimbus configuration
       shell: bash
       run: |
@@ -305,16 +312,36 @@ jobs:
       uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce
       with:
         msbuild-architecture: ${{ matrix.job.arch == 'aarch64' && 'arm64' || 'x86' }}
+    - name: Prepare portable artifact
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force PortableOutput | Out-Null
+        Copy-Item ./SignOutput/*.exe ./PortableOutput/ -ErrorAction Stop
+        Copy-Item LICENCE ./PortableOutput/LICENCE -ErrorAction Stop
+        Get-ChildItem ./PortableOutput/*.exe | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($_.Name)"
+        } | Set-Content ./PortableOutput/SHA256SUMS.txt
+    - name: Upload Nimbus Connect portable
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+      with:
+        name: NimbusConnect-1.5.0-windows-x64-portable
+        path: PortableOutput/
+        if-no-files-found: error
+        retention-days: 14
     - name: Build msi
       run: |
         pushd ./res/msi
         python preprocess.py --arp -d ../../rustdesk --app-name "Nimbus Connect" --manufacturer "Nimbus Connect"
+        if ($LASTEXITCODE -ne 0) { throw "MSI preprocessing failed: $LASTEXITCODE" }
         nuget restore msi.sln
-        $msiPlatform = if ('${{ matrix.job.arch }}' -eq 'aarch64') { 'ARM64' } else { 'x64' }
-        msbuild msi.sln -p:Configuration=Release -p:Platform=$msiPlatform /p:TargetVersion=Windows10
+        if ($LASTEXITCODE -ne 0) { throw "NuGet restore failed: $LASTEXITCODE" }
+        msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
+        if ($LASTEXITCODE -ne 0) { throw "MSBuild failed: $LASTEXITCODE" }
         $msi = Get-ChildItem ./Package/bin/*/Release/en-us/Package.msi | Select-Object -First 1
-        mv $msi.FullName ../../SignOutput/NimbusConnect-${{ env.VERSION }}-windows-x64.msi
-        sha256sum ../../SignOutput/NimbusConnect-*.msi
+        if (-not $msi) { throw "Expected MSI output missing" }
+        Move-Item $msi.FullName ../../SignOutput/NimbusConnect-${{ env.VERSION }}-windows-x64.msi
+        popd
     - name: Write artifact checksums
       shell: pwsh
       run: |

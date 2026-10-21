@@ -44,7 +44,12 @@ The original upstream workflows and `master` branch are not rewritten.
 No automatic releases or signing-service calls are performed. The jobs use
 read-only repository permissions and upload build artifacts for 14 days.
 
-Expected artifact: `NimbusConnect-1.5.0-windows-x64`, containing:
+The portable-only artifact `NimbusConnect-1.5.0-windows-x64-portable` is uploaded
+before MSI packaging and contains the EXE, its `SHA256SUMS.txt` and `LICENCE`.
+It remains available if the subsequent MSI build fails; that does not mean the
+MSI or overall build passed.
+
+Expected complete artifact: `NimbusConnect-1.5.0-windows-x64`, containing:
 
 - `NimbusConnect-1.5.0-windows-x64.exe`: self-extracting client.
 - `NimbusConnect-1.5.0-windows-x64.msi`: installer.
