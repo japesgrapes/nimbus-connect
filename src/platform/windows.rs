@@ -138,6 +138,15 @@ fn validate_install_app_name(app_name: &str) -> ResultType<()> {
     Ok(())
 }
 
+#[test]
+fn nimbus_installation_name_passes_safety_validation() {
+    crate::common::load_custom_client();
+    let app_name = crate::get_app_name();
+    assert_eq!(app_name, "NimbusConnect");
+    validate_install_app_name(&app_name).expect("Compiled application name must be installable");
+    assert!(validate_install_app_name("Nimbus Connect").is_err());
+}
+
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
         let hwnd = GetForegroundWindow();

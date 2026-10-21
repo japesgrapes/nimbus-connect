@@ -37,7 +37,7 @@ class MsiExecutableProbe(unittest.TestCase):
 class BuiltWindowsClientProbe(unittest.TestCase):
     def test_real_windows_client_metadata(self):
         args = preprocess.make_parser().parse_args([])
-        self.assertTrue(preprocess.init_global_vars(ROOT / 'rustdesk', 'Nimbus Connect', args))
+        self.assertTrue(preprocess.init_global_vars(ROOT / 'rustdesk', 'NimbusConnect', args))
         self.assertTrue(preprocess.g_version.startswith('1.5.0.'))
 
 

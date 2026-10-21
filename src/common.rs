@@ -2359,7 +2359,7 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 
 pub fn load_custom_client() {
     // Nimbus defaults are compiled in; no signed Pro custom-client file is needed.
-    *config::APP_NAME.write().unwrap() = "Nimbus Connect".to_owned();
+    *config::APP_NAME.write().unwrap() = "NimbusConnect".to_owned();
     {
         let mut defaults = config::DEFAULT_SETTINGS.write().unwrap();
         for (key, value) in [
@@ -2965,7 +2965,7 @@ mod tests {
     #[test]
     fn nimbus_defaults_match_the_owner_configuration() {
         load_custom_client();
-        assert_eq!(get_app_name(), "Nimbus Connect");
+        assert_eq!(get_app_name(), "NimbusConnect");
         assert_eq!(Config::get_option("custom-rendezvous-server"), "rustdesk.nimbusconnect.co.za");
         assert_eq!(Config::get_option("key"), "OiHgteVB1Hk+sBd5WRgNwseYFthBc7LMZu+ESvzaTOk=");
         assert_eq!(Config::get_option("relay-server"), "");

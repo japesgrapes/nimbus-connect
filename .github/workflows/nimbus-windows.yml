@@ -146,9 +146,20 @@ jobs:
       with:
         submodules: recursive
         persist-credentials: false
+    - name: Require artifact encryption key
+      shell: pwsh
+      env:
+        NIMBUS_ARTIFACT_KEY: ${{ secrets.NIMBUS_ARTIFACT_KEY }}
+      run: if ($env:NIMBUS_ARTIFACT_KEY.Length -ne 64) { throw "Artifact encryption key missing" }
+    - name: Install pinned artifact crypto dependency
+      shell: pwsh
+      run: |-
+        python -m pip install --disable-pip-version-check -r branding/requirements-build.txt
+        if ($LASTEXITCODE -ne 0) { throw "Crypto dependency installation failed" }
     - name: Validate Nimbus branding contracts
       shell: bash
-      run: python3 -m unittest branding/test_branding.py branding/test_msi_preprocess.py -v
+      run: python3 -m unittest branding/test_branding.py branding/test_msi_preprocess.py branding/test_artifact_crypto.py
+        -v
     - name: Restore bridge files
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
@@ -186,9 +197,6 @@ jobs:
         toolchain: ${{ env.SCITER_RUST_VERSION }}
         targets: ${{ matrix.job.target }}
         components: rustfmt
-    - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
-      with:
-        prefix-key: ${{ matrix.job.os }}
     - name: Setup vcpkg with Github Actions binary cache
       uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
       with:
@@ -255,14 +263,14 @@ jobs:
             Write-Host "Ingore the printer driver error."
         }
 
-        Move-Item ./rustdesk/rustdesk.exe "./rustdesk/nimbus connect.exe"
+        Move-Item ./rustdesk/rustdesk.exe "./rustdesk/nimbusconnect.exe"
     - name: Smoke test Windows binary identity and version
       shell: pwsh
       run: |
-        $exe = (Resolve-Path './rustdesk/nimbus connect.exe').Path
+        $exe = (Resolve-Path './rustdesk/nimbusconnect.exe').Path
         $info = (Get-Item $exe).VersionInfo
         if ($info.ProductName -cne 'Nimbus Connect') { throw 'Wrong product name' }
-        if ($info.OriginalFilename -cne 'nimbus connect.exe') { throw 'Wrong original filename' }
+        if ($info.OriginalFilename -cne 'nimbusconnect.exe') { throw 'Wrong original filename' }
         $p = Start-Process -FilePath $exe -ArgumentList '--version' -Wait -PassThru -RedirectStandardOutput version.txt -RedirectStandardError version-error.txt
         if ($p.ExitCode -ne 0) { throw "Version probe failed: $($p.ExitCode)" }
         $reported = (Get-Content version.txt -Raw).Trim()
@@ -280,6 +288,7 @@ jobs:
       run: |
         FEATURES=$(python3 ./build.py --portable --flutter --skip-portable-pack --hwcodec --vram --print-features)
         cargo test --locked --release --lib --features "$FEATURES" common::tests::nimbus_defaults_match_the_owner_configuration -- --exact --nocapture
+        cargo test --locked --release --lib --features "$FEATURES" platform::windows::nimbus_installation_name_passes_safety_validation -- --exact --nocapture
     - name: find Runner.res
       continue-on-error: true
       shell: bash
@@ -304,7 +313,7 @@ jobs:
         sed -i '/dpiAware/d' res/manifest.xml
         pushd ./libs/portable
         pip3 install -r requirements.txt
-        python3 ./generate.py -f ../../rustdesk/ -o . -e "../../rustdesk/nimbus connect.exe"
+        python3 ./generate.py -f ../../rustdesk/ -o . -e "../../rustdesk/nimbusconnect.exe"
         popd
         mkdir -p ./SignOutput
         mv ./target/release/rustdesk-portable-packer.exe ./SignOutput/NimbusConnect-${{ env.VERSION }}-windows-x64.exe
@@ -322,17 +331,30 @@ jobs:
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             "$($hash.Hash.ToLower())  $($_.Name)"
         } | Set-Content ./PortableOutput/SHA256SUMS.txt
-    - name: Upload Nimbus Connect portable
+    - name: Encrypt Nimbus Connect portable
+      shell: pwsh
+      env:
+        NIMBUS_ARTIFACT_KEY: ${{ secrets.NIMBUS_ARTIFACT_KEY }}
+      run: |
+        if ($env:NIMBUS_ARTIFACT_KEY.Length -ne 64) { throw "Encryption key unavailable; refusing upload" }
+        Compress-Archive -Path ./PortableOutput/* -DestinationPath ./NimbusConnect-1.5.0-windows-x64-portable.zip -ErrorAction Stop
+        python branding/artifact_crypto.py encrypt --input NimbusConnect-1.5.0-windows-x64-portable.zip --output EncryptedOutput/NimbusConnect-1.5.0-windows-x64-portable.zip.aesgcm
+        if ($LASTEXITCODE -ne 0) { throw "Artifact encryption failed" }
+        python branding/artifact_crypto.py decrypt --input EncryptedOutput/NimbusConnect-1.5.0-windows-x64-portable.zip.aesgcm --output verify-NimbusConnect-1.5.0-windows-x64-portable.zip
+        if ($LASTEXITCODE -ne 0) { throw "Artifact authentication check failed" }
+        if ((Get-FileHash NimbusConnect-1.5.0-windows-x64-portable.zip).Hash -cne (Get-FileHash verify-NimbusConnect-1.5.0-windows-x64-portable.zip).Hash) { throw "Encryption round-trip mismatch" }
+        Remove-Item NimbusConnect-1.5.0-windows-x64-portable.zip,verify-NimbusConnect-1.5.0-windows-x64-portable.zip
+    - name: Upload Nimbus Connect portable (encrypted)
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: NimbusConnect-1.5.0-windows-x64-portable
-        path: PortableOutput/
+        name: NimbusConnect-1.5.0-windows-x64-portable-encrypted
+        path: EncryptedOutput/NimbusConnect-1.5.0-windows-x64-portable.zip.aesgcm
         if-no-files-found: error
         retention-days: 14
     - name: Build msi
       run: |
         pushd ./res/msi
-        python preprocess.py --arp -d ../../rustdesk --app-name "Nimbus Connect" --manufacturer "Nimbus Connect"
+        python preprocess.py --arp -d ../../rustdesk --app-name "NimbusConnect" --manufacturer "Nimbus Connect"
         if ($LASTEXITCODE -ne 0) { throw "MSI preprocessing failed: $LASTEXITCODE" }
         nuget restore msi.sln
         if ($LASTEXITCODE -ne 0) { throw "NuGet restore failed: $LASTEXITCODE" }
@@ -350,11 +372,24 @@ jobs:
             $hash = Get-FileHash $_.FullName -Algorithm SHA256
             "$($hash.Hash.ToLower())  $($_.Name)"
         } | Set-Content ./SignOutput/SHA256SUMS.txt
-    - name: Upload Nimbus Connect installers
+    - name: Encrypt Nimbus Connect installers
+      shell: pwsh
+      env:
+        NIMBUS_ARTIFACT_KEY: ${{ secrets.NIMBUS_ARTIFACT_KEY }}
+      run: |
+        if ($env:NIMBUS_ARTIFACT_KEY.Length -ne 64) { throw "Encryption key unavailable; refusing upload" }
+        Compress-Archive -Path ./SignOutput/* -DestinationPath ./NimbusConnect-1.5.0-windows-x64.zip -ErrorAction Stop
+        python branding/artifact_crypto.py encrypt --input NimbusConnect-1.5.0-windows-x64.zip --output EncryptedOutput/NimbusConnect-1.5.0-windows-x64.zip.aesgcm
+        if ($LASTEXITCODE -ne 0) { throw "Artifact encryption failed" }
+        python branding/artifact_crypto.py decrypt --input EncryptedOutput/NimbusConnect-1.5.0-windows-x64.zip.aesgcm --output verify-NimbusConnect-1.5.0-windows-x64.zip
+        if ($LASTEXITCODE -ne 0) { throw "Artifact authentication check failed" }
+        if ((Get-FileHash NimbusConnect-1.5.0-windows-x64.zip).Hash -cne (Get-FileHash verify-NimbusConnect-1.5.0-windows-x64.zip).Hash) { throw "Encryption round-trip mismatch" }
+        Remove-Item NimbusConnect-1.5.0-windows-x64.zip,verify-NimbusConnect-1.5.0-windows-x64.zip
+    - name: Upload Nimbus Connect installers (encrypted)
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
-        name: NimbusConnect-1.5.0-windows-x64
-        path: SignOutput/
+        name: NimbusConnect-1.5.0-windows-x64-encrypted
+        path: EncryptedOutput/NimbusConnect-1.5.0-windows-x64.zip.aesgcm
         if-no-files-found: error
         retention-days: 14
     timeout-minutes: 180

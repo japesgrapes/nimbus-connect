@@ -92,9 +92,9 @@ BEGIN
             VALUE "CompanyName", "Nimbus Connect" "\0"
             VALUE "FileDescription", "Nimbus Connect Remote Support" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "nimbus connect" "\0"
+            VALUE "InternalName", "nimbusconnect" "\0"
             VALUE "LegalCopyright", "Copyright © 2026 Purslane Tech Pte. Ltd. All rights reserved." "\0"
-            VALUE "OriginalFilename", "nimbus connect.exe" "\0"
+            VALUE "OriginalFilename", "nimbusconnect.exe" "\0"
             VALUE "ProductName", "Nimbus Connect" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
